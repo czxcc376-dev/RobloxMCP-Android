@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+out/
+pkg/
+release.jks
+node.deb
+data.tar.xz
+control.tar.xz
+debian-binary
+*.log
