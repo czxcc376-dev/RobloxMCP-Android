@@ -1,50 +1,91 @@
 package com.milk.robloxmcp
 
 import android.content.Context
+import android.content.res.AssetManager
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.zip.GZIPInputStream
 
 object ServerCore {
-    private val extracting = AtomicBoolean(false)
+    private val installing = AtomicBoolean(false)
+    private const val MARKER = ".installed_v4"
 
     fun serverDir(ctx: Context) = File(ctx.filesDir, "server")
     fun nodeBin(ctx: Context) = File(ctx.applicationInfo.nativeLibraryDir, "libnode.so")
     fun libDir(ctx: Context) = File(ctx.applicationInfo.nativeLibraryDir)
 
+    /** assets/server 直接拷到 filesDir/server，无解压 */
     fun ensureInstalled(ctx: Context, onLog: (String) -> Unit = {}): File {
         val dir = serverDir(ctx)
-        val marker = File(dir, ".installed_v3")
-        if (marker.exists() && File(dir, "dist/interface/launcher.js").exists()) return dir
-        if (!extracting.compareAndSet(false, true)) {
-            while (extracting.get()) Thread.sleep(120)
+        if (File(dir, MARKER).exists() && File(dir, "dist/interface/launcher.js").exists()) {
+            return dir
+        }
+        if (!installing.compareAndSet(false, true)) {
+            var waited = 0
+            while (installing.get() && waited < 300_000) { Thread.sleep(150); waited += 150 }
             return dir
         }
         try {
-            onLog("正在解压服务端…")
+            onLog("首次启动：复制服务端…")
             dir.deleteRecursively()
             dir.mkdirs()
             val t0 = System.currentTimeMillis()
-            var files = 0
-            ctx.assets.open("server.tar.gz").use { raw ->
-                GZIPInputStream(raw, 1 shl 16).use { gz ->
-                    files = extractTar(gz, dir) { n -> if (n % 500 == 0) onLog("已解压 $n 个文件…") }
-                }
+            val am = ctx.assets
+            var count = copyDir(am, "server", dir) { n ->
+                if (n % 500 == 0) onLog("已复制 $n 个文件…")
             }
             val ms = System.currentTimeMillis() - t0
-            if (!File(dir, "dist/interface/launcher.js").exists())
-                throw IllegalStateException("解压不完整：launcher.js 缺失")
-            marker.writeText("ok")
-            onLog("服务端就绪：$files 文件 / ${ms}ms")
+            if (!File(dir, "dist/interface/launcher.js").exists()) {
+                throw IllegalStateException("复制不完整：launcher.js 缺失（$count 文件）")
+            }
+            File(dir, MARKER).writeText("ok")
+            onLog("服务端就绪：$count 文件 / ${ms}ms")
             return dir
+        } catch (t: Throwable) {
+            onLog("复制失败：" + (t.message ?: t.toString()))
+            throw t
         } finally {
-            extracting.set(false)
+            installing.set(false)
         }
     }
 
-    /** Node 按 soname 找依赖（libcrypto.so.3 等），jniLibs 只能放 lib*.so，故建软链 */
-    fun prepareSonames(ctx: Context, onLog: (String) -> Unit = {}): File {
+    private fun copyDir(
+        am: AssetManager,
+        assetPath: String,
+        target: File,
+        progress: (Int) -> Unit
+    ): Int {
+        var total = 0
+        val children = try { am.list(assetPath) } catch (_: Exception) { null } ?: return 0
+        if (children.isEmpty()) {
+            // 是文件
+            target.parentFile?.mkdirs()
+            am.open(assetPath).use { ins ->
+                FileOutputStream(target).use { out -> ins.copyTo(out, 64 * 1024) }
+            }
+            return 1
+        }
+        target.mkdirs()
+        for (child in children) {
+            val cPath = "$assetPath/$child"
+            val cTarget = File(target, child)
+            val sub = try { am.list(cPath) } catch (_: Exception) { emptyArray() }
+            if (sub != null && sub.isNotEmpty()) {
+                total += copyDir(am, cPath, cTarget, progress)
+            } else {
+                cTarget.parentFile?.mkdirs()
+                am.open(cPath).use { ins ->
+                    FileOutputStream(cTarget).use { out -> ins.copyTo(out, 64 * 1024) }
+                }
+                total++
+                progress(total)
+            }
+        }
+        return total
+    }
+
+    /** Node 按 soname 找依赖，jniLibs 只能放 lib*.so，故建软链 */
+    fun prepareSonames(ctx: Context, onLog: (String) -> Unit = {}) {
         val libs = libDir(ctx)
         val pairs = listOf(
             "libcrypto.so.3" to "libcrypto.so",
@@ -63,87 +104,5 @@ object ServerCore {
             } catch (_: Throwable) {}
         }
         onLog("运行时库就绪")
-        return libs
-    }
-
-    private fun extractTar(
-        input: java.io.InputStream,
-        dest: File,
-        progress: (Int) -> Unit = {}
-    ): Int {
-        var files = 0
-        val hdr = ByteArray(512)
-        val buf = ByteArray(64 * 1024)
-        val destCanon = dest.canonicalPath
-
-        fun readBlock(): Int {
-            var off = 0
-            while (off < 512) {
-                val r = input.read(hdr, off, 512 - off)
-                if (r < 0) return off
-                off += r
-            }
-            return 512
-        }
-
-        while (true) {
-            if (readBlock() != 512) return files
-            if (hdr[0].toInt() == 0) return files
-
-            val rawName = String(hdr, 0, 100, Charsets.UTF_8).substringBefore('\u0000')
-            val sizeField = String(hdr, 124, 12, Charsets.US_ASCII).substringBefore('\u0000').trim()
-            var size = 0L
-            try { if (sizeField.isNotEmpty()) size = sizeField.toLong(8) } catch (_: Exception) { size = 0L }
-            val type = hdr[156].toInt().toChar()
-
-            val rel = rawName.removePrefix("./").removePrefix("server/").trimEnd('/')
-            if (rel.isNotEmpty()) {
-                val out = File(dest, rel)
-                if (out.canonicalPath.startsWith(destCanon)) {
-                    when (type) {
-                        '5' -> out.mkdirs()
-                        else -> {
-                            out.parentFile?.mkdirs()
-                            java.io.FileOutputStream(out).use { fos ->
-                                var left = size
-                                while (left > 0) {
-                                    val want = if (left > buf.size) buf.size else left.toInt()
-                                    val got = input.read(buf, 0, want)
-                                    if (got <= 0) break
-                                    fos.write(buf, 0, got)
-                                    left -= got
-                                }
-                            }
-                            files++
-                            progress(files)
-                        }
-                    }
-                } else {
-                    var left = size
-                    while (left > 0) {
-                        val want = if (left > buf.size) buf.size else left.toInt()
-                        val got = input.read(buf, 0, want)
-                        if (got <= 0) break
-                        left -= got
-                    }
-                }
-            } else {
-                var left = size
-                while (left > 0) {
-                    val want = if (left > buf.size) buf.size else left.toInt()
-                    val got = input.read(buf, 0, want)
-                    if (got <= 0) break
-                    left -= got
-                }
-            }
-
-            val pad = ((512 - (size % 512)) % 512).toInt()
-            var skipped = 0
-            while (skipped < pad) {
-                val r = input.read(buf, 0, minOf(pad - skipped, buf.size))
-                if (r <= 0) return files
-                skipped += r
-            }
-        }
     }
 }

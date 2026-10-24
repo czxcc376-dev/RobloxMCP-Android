@@ -1,0 +1,14 @@
+/**
+ * Shared helpers for the IDA-style "Disassembly & Xrefs" toolkit. These tools
+ * walk the garbage collector (getgc) to cross-reference Luau functions the way
+ * IDA cross-references code: by string/constant, by referenced function/instance,
+ * by upvalue, by bytecode pattern, etc.
+ *
+ * Every tool prepends XREF_PRELUDE and is fully pcall-guarded so one bad object
+ * never aborts a whole-heap scan. Tools RETURN A LUA TABLE (the connector
+ * JSON-encodes it for the AI) — they do not JSONEncode.
+ */
+import { q } from "./luau.js";
+export { q };
+export declare const XREF_PRELUDE = "\nlocal __d = (type(debug) == \"table\") and debug or {}\nlocal __getinfo = (type(getinfo) == \"function\" and getinfo) or __d.getinfo or __d.info\nlocal __getconstants = getconstants or __d.getconstants\nlocal __getupvalues = getupvalues or __d.getupvalues\nlocal __getprotos = getprotos or __d.getprotos\n\nlocal function __fnInfo(f)\n  local r = { ptr = tostring(f), name = \"\", source = \"\", line = -1, nparams = -1, nups = -1 }\n  if type(__getinfo) == \"function\" then\n    local ok, info = pcall(__getinfo, f, \"nSlu\")\n    if ok and type(info) == \"table\" then\n      r.name = info.name or \"\"\n      r.source = info.source or \"\"\n      r.line = info.linedefined or -1\n      r.nparams = info.nparams or -1\n      r.nups = info.nups or -1\n    else\n      local oks, s = pcall(__getinfo, f, \"s\"); if oks and type(s) ~= \"table\" and s ~= nil then r.source = tostring(s) end\n      local okl, l = pcall(__getinfo, f, \"l\"); if okl and type(l) == \"number\" then r.line = l end\n      local okn, n = pcall(__getinfo, f, \"n\"); if okn and n ~= nil and type(n) ~= \"table\" then r.name = tostring(n) end\n    end\n  end\n  return r\nend\n\nlocal function __consts(f)\n  if type(__getconstants) ~= \"function\" then return {} end\n  local ok, c = pcall(__getconstants, f)\n  if ok and type(c) == \"table\" then return c end\n  return {}\nend\nlocal function __ups(f)\n  if type(__getupvalues) ~= \"function\" then return {} end\n  local ok, u = pcall(__getupvalues, f)\n  if ok and type(u) == \"table\" then return u end\n  return {}\nend\nlocal function __protos(f)\n  if type(__getprotos) ~= \"function\" then return {} end\n  local ok, p = pcall(__getprotos, f)\n  if ok and type(p) == \"table\" then return p end\n  return {}\nend\n\n-- Walk GC functions up to 'cap'; call cb(fn) for each. Returns (truncated, scanned).\nlocal function __eachFn(cap, cb)\n  local ok, gc = pcall(getgc, true)\n  if not ok or type(gc) ~= \"table\" then\n    ok, gc = pcall(getgc)\n    if not ok or type(gc) ~= \"table\" then return false, 0 end\n  end\n  local n = 0\n  for _, o in gc do\n    if type(o) == \"function\" then\n      n = n + 1\n      if n > cap then return true, n end\n      pcall(cb, o)\n    end\n  end\n  return false, n\nend\n";
+//# sourceMappingURL=xrefs.d.ts.map

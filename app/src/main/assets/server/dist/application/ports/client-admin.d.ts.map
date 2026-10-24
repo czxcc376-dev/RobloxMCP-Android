@@ -1,0 +1,1 @@
+{"version":3,"file":"client-admin.d.ts","sourceRoot":"","sources":["../../../src/application/ports/client-admin.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,4BAA4B,CAAC;AAE3D;;;;GAIG;AACH,MAAM,WAAW,WAAW;IAC1B,4EAA4E;IAC5E,UAAU,CAAC,QAAQ,EAAE,QAAQ,EAAE,MAAM,CAAC,EAAE,MAAM,GAAG,OAAO,CAAC;CAC1D"}

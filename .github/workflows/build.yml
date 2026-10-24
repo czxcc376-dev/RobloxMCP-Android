@@ -68,10 +68,10 @@ jobs:
           fi
           ls -lh app/src/main/jniLibs/arm64-v8a/
 
-      - name: Build server bundle
+      - name: Build server assets (no tarball)
         run: |
           set -e
-          if [ ! -f app/src/main/assets/server.tar.gz ]; then
+          if [ ! -f app/src/main/assets/server/dist/interface/launcher.js ]; then
             curl -sL -o src.tgz "https://github.com/okenjioxx/executor-mcp-roblox/archive/refs/heads/main.tar.gz"
             tar xzf src.tgz
             cd executor-mcp-roblox-main
@@ -79,23 +79,16 @@ jobs:
             npm run build
             npm prune --omit=dev
             cd ..
-            mkdir -p pkg/server
-            cp -r executor-mcp-roblox-main/dist pkg/server/
-            cp -r executor-mcp-roblox-main/node_modules pkg/server/
-            cp executor-mcp-roblox-main/package.json pkg/server/
-            cp executor-mcp-roblox-main/connector.luau pkg/server/
-            mkdir -p app/src/main/assets
-            tar czf app/src/main/assets/server.tar.gz -C pkg server
+            mkdir -p app/src/main/assets/server
+            cp -r executor-mcp-roblox-main/dist app/src/main/assets/server/
+            cp -r executor-mcp-roblox-main/node_modules app/src/main/assets/server/
+            cp executor-mcp-roblox-main/package.json app/src/main/assets/server/
+            cp executor-mcp-roblox-main/connector/connector.luau app/src/main/assets/server/connector.luau 2>/dev/null || \
+              curl -sL -o app/src/main/assets/server/connector.luau \
+                "https://raw.githubusercontent.com/okenjioxx/executor-mcp-roblox/main/connector/connector.luau"
           fi
-          ls -lh app/src/main/assets/
-
-      - name: Copy connector asset
-        run: |
-          if [ ! -f app/src/main/assets/connector.luau ]; then
-            curl -sL -o app/src/main/assets/connector.luau \
-              "https://github.com/okenjioxx/executor-mcp-roblox/raw/main/connector.luau"
-          fi
-          ls -lh app/src/main/assets/
+          echo "files: $(find app/src/main/assets/server -type f | wc -l)"
+          ls app/src/main/assets/server
 
       - name: Generate debug keystore
         run: |

@@ -1,0 +1,1 @@
+{"version":3,"file":"protocol-codec.d.ts","sourceRoot":"","sources":["../../../src/infrastructure/transport/protocol-codec.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EAEV,aAAa,EAOb,aAAa,EACd,MAAM,mCAAmC,CAAC;AAqH3C;;;;GAIG;AACH,wBAAgB,mBAAmB,CAAC,GAAG,EAAE,MAAM,GAAG,aAAa,CAsB9D;AAED,sDAAsD;AACtD,wBAAgB,mBAAmB,CAAC,GAAG,EAAE,aAAa,GAAG,MAAM,CAW9D"}
