@@ -43,11 +43,28 @@ jobs:
           set -e
           mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets
           if [ ! -f app/src/main/jniLibs/arm64-v8a/libnode.so ]; then
-            curl -sL -o node.deb "https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.12.1_aarch64.deb"
-            ar x node.deb
-            tar xf data.tar.xz
+            B=https://packages.termux.dev/apt/termux-main
+            fetch() { curl -sL -o p.deb "$B/$1"; ar x p.deb data.tar.xz; tar xf data.tar.xz; rm -f p.deb data.tar.xz control.tar.xz debian-binary; }
+            fetch pool/main/n/nodejs/nodejs_26.12.1_aarch64.deb
             cp data/data/com.termux/files/usr/bin/node app/src/main/jniLibs/arm64-v8a/libnode.so
-            chmod 755 app/src/main/jniLibs/arm64-v8a/libnode.so
+            fetch pool/main/z/zlib/zlib_1.3.2_aarch64.deb
+            fetch pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb
+            fetch pool/main/libf/libffi/libffi_3.8.0_aarch64.deb
+            fetch "pool/main/o/openssl/openssl_1%3A3.6.5_aarch64.deb"
+            fetch pool/main/libi/libicu/libicu_78.3_aarch64.deb
+            fetch pool/main/libs/libsqlite/libsqlite_3.54.1_aarch64.deb
+            fetch "pool/main/libc/libc++/libc%2B%2B_30_aarch64.deb"
+            L=data/data/com.termux/files/usr/lib
+            J=app/src/main/jniLibs/arm64-v8a
+            cp $L/libc++_shared.so $J/ ; cp $L/libcares.so $J/ ; cp $L/libffi.so $J/
+            cp $(find $L -name 'libcrypto.so.3*' | head -1) $J/libcrypto.so
+            cp $(find $L -name 'libssl.so.3*' | head -1) $J/libssl.so
+            cp $(find $L -name 'libz.so.1.*' | head -1) $J/libz.so
+            cp $(find $L -name 'libicudata.so.78.*' | head -1) $J/libicudata.so
+            cp $(find $L -name 'libicui18n.so.78.*' | head -1) $J/libicui18n.so
+            cp $(find $L -name 'libicuuc.so.78.*' | head -1) $J/libicuuc.so
+            cp $(find $L -name 'libsqlite3.so.3*' | head -1) $J/libsqlite3.so
+            chmod 755 $J/*
           fi
           ls -lh app/src/main/jniLibs/arm64-v8a/
 

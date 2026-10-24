@@ -79,18 +79,25 @@ class FloatingService : Service() {
         width = dp(24); height = dp(24)
     }
 
+    private fun miniBtn(label: String): TextView = TextView(this).apply {
+        text = label
+        setTextColor(Color.parseColor("#6E8399"))
+        textSize = 13f
+        gravity = Gravity.CENTER
+        width = dp(26); height = dp(26)
+    }
+
     private fun createPanel() {
         val ctx = this
         val panel = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(12))
+            setPadding(dp(16), dp(13), dp(16), dp(14))
             background = GradientDrawable().apply {
-                cornerRadius = dp(18).toFloat()
-                setColor(Color.parseColor("#E60F151C"))
-                setStroke(dp(1), Color.parseColor("#2A3F55"))
+                cornerRadius = dp(22).toFloat()
+                setColor(Color.parseColor("#F2101722"))
+                setStroke(dp(1), Color.parseColor("#2E4054"))
             }
         }
-
         val header = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -98,51 +105,66 @@ class FloatingService : Service() {
         dot = View(ctx).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#FF5252"))
+                setColor(Color.parseColor("#FF5C5C"))
             }
         }
-        header.addView(dot, LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(7) })
+        header.addView(dot, LinearLayout.LayoutParams(dp(8), dp(8)).apply { marginEnd = dp(8) })
         val title = TextView(ctx).apply {
-            text = "Roblox MCP"
-            setTextColor(Color.parseColor("#EAF2FF"))
+            text = "MCP"
+            setTextColor(Color.parseColor("#F2F6FC"))
             textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
         }
         header.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val btnMin = smallButton("—")
-        val btnClose = smallButton("✕")
+        val btnMin = miniBtn("—")
+        val btnClose = miniBtn("✕")
         header.addView(btnMin)
         header.addView(btnClose)
         panel.addView(header)
 
         tvStatus = TextView(ctx).apply {
-            text = "未启动"; setTextColor(Color.parseColor("#7FE3A1")); textSize = 11f
-            setPadding(0, dp(5), 0, 0)
+            text = "启动中…"
+            setTextColor(Color.parseColor("#8FA3BB"))
+            textSize = 11f
+            setPadding(0, dp(6), 0, 0)
         }
         panel.addView(tvStatus)
 
         tvAddr = TextView(ctx).apply {
-            text = "127.0.0.1:${App.PORT}"; setTextColor(Color.parseColor("#63A8FF"))
-            textSize = 12f; setTypeface(Typeface.MONOSPACE)
-            setPadding(0, dp(3), 0, 0)
+            text = "127.0.0.1:" + App.PORT
+            setTextColor(Color.parseColor("#4C8DFF"))
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setPadding(0, dp(5), 0, 0)
         }
         panel.addView(tvAddr)
 
+        val divider = View(ctx).apply { setBackgroundColor(Color.parseColor("#1C2836")) }
+        panel.addView(divider, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+            topMargin = dp(10); bottomMargin = dp(9)
+        })
+
         tvGame = TextView(ctx).apply {
-            text = "地图：—"; setTextColor(Color.parseColor("#B9C7D8")); textSize = 11f
-            setPadding(0, dp(3), 0, 0); maxLines = 2
+            text = "地图 —"
+            setTextColor(Color.parseColor("#C6D2E0"))
+            textSize = 11f
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
         panel.addView(tvGame)
 
         tvStats = TextView(ctx).apply {
-            text = "客户端 0 · 工具 289"; setTextColor(Color.parseColor("#8FA3B8")); textSize = 10f
-            setPadding(0, dp(3), 0, 0)
+            text = "0 客户端 · 289 工具"
+            setTextColor(Color.parseColor("#6E8399"))
+            textSize = 10f
+            setPadding(0, dp(4), 0, 0)
         }
         panel.addView(tvStats)
 
         card = panel
         lp = WindowManager.LayoutParams(
-            dp(190), WindowManager.LayoutParams.WRAP_CONTENT,
+            dp(206), WindowManager.LayoutParams.WRAP_CONTENT,
             if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -150,7 +172,7 @@ class FloatingService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dp(12); y = dp(120)
+            x = dp(14); y = dp(130)
         }
         try {
             wm?.addView(panel, lp)
@@ -159,7 +181,6 @@ class FloatingService : Service() {
             stopSelf()
             return
         }
-
         btnMin.setOnClickListener { toggleCollapse() }
         btnClose.setOnClickListener { stopSelf() }
         panel.setOnTouchListener(dragListener)

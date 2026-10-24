@@ -47,6 +47,11 @@ class McpService : Service() {
         return START_STICKY
     }
 
+    private fun log(line: String) {
+        android.util.Log.i(TAG, line)
+        Logs.append(line)
+    }
+
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RobloxMCP::server").apply {
@@ -59,8 +64,11 @@ class McpService : Service() {
         if (!running.compareAndSet(false, true)) return
         scope.launch {
             try {
-                val dir = ServerCore.ensureInstalled(this@McpService) { updateNotification(it) }
+                val dir = ServerCore.ensureInstalled(this@McpService) { updateNotification(it); log(it) }
+                ServerCore.prepareSonames(this@McpService) { log(it) }
                 val node = ServerCore.nodeBin(this@McpService)
+                log("node=" + node.absolutePath + " exists=" + node.exists())
+                log("libs=" + ServerCore.libDir(this@McpService).absolutePath)
                 if (!node.exists()) {
                     lastError = "缺少 Node 运行时：${node.absolutePath}"
                     updateNotification(lastError!!); running.set(false); process = null; return@launch
@@ -76,6 +84,8 @@ class McpService : Service() {
                 pb.environment()["HOME"] = filesDir.absolutePath
                 pb.environment()["TMPDIR"] = cacheDir.absolutePath
                 pb.environment()["NODE_ENV"] = "production"
+                pb.environment()["LD_LIBRARY_PATH"] = ServerCore.libDir(this@McpService).absolutePath
+                pb.environment()["TZ"] = java.util.TimeZone.getDefault().id
                 val p = pb.start()
                 process = p
                 startedAt = System.currentTimeMillis()
@@ -105,7 +115,7 @@ class McpService : Service() {
             try {
                 p.inputStream.bufferedReader().useLines { lines ->
                     lines.forEach { line ->
-                        Log.i(TAG, line)
+                        log(line)
                         if (line.contains("\"tools\"")) updateNotification("已就绪 · 工具已加载")
                     }
                 }
