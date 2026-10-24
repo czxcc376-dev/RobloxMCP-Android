@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.view.*
 import android.widget.*
 import kotlinx.coroutines.*
@@ -43,10 +44,29 @@ class FloatingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (!Settings.canDrawOverlays(this)) {
+            overlayMissing = true
+            stopSelf()
+            return
+        }
+        overlayMissing = false
         instance = this
         wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        createPanel()
-        startTicker()
+        try {
+            createPanel()
+            startTicker()
+        } catch (t: Throwable) {
+            overlayMissing = true
+            clearViews()
+            stopSelf()
+        }
+    }
+
+    private fun clearViews() {
+        try { card?.let { wm?.removeView(it) } } catch (_: Exception) {}
+        try { bubble?.let { wm?.removeView(it) } } catch (_: Exception) {}
+        card = null
+        bubble = null
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -132,7 +152,13 @@ class FloatingService : Service() {
             gravity = Gravity.TOP or Gravity.START
             x = dp(12); y = dp(120)
         }
-        wm?.addView(panel, lp)
+        try {
+            wm?.addView(panel, lp)
+        } catch (t: Throwable) {
+            overlayMissing = true
+            stopSelf()
+            return
+        }
 
         btnMin.setOnClickListener { toggleCollapse() }
         btnClose.setOnClickListener { stopSelf() }
@@ -243,19 +269,18 @@ class FloatingService : Service() {
         instance = null
         scope.cancel()
         handler.removeCallbacksAndMessages(null)
-        try { wm?.removeView(card) } catch (_: Exception) {}
-        try { wm?.removeView(bubble) } catch (_: Exception) {}
-        if (McpService.isRunning) {
-            try { startService(Intent(this, FloatingService::class.java)) } catch (_: Exception) {}
-        }
+        clearViews()
         super.onDestroy()
     }
 
     companion object {
         @Volatile var instance: FloatingService? = null
             private set
+        @Volatile var overlayMissing: Boolean = false
         val isRunning: Boolean get() = instance != null
         fun start(ctx: Context) {
+            if (!Settings.canDrawOverlays(ctx)) { overlayMissing = true; return }
+            overlayMissing = false
             try { ctx.startService(Intent(ctx, FloatingService::class.java)) } catch (_: Exception) {}
         }
         fun stop(ctx: Context) {

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
@@ -40,10 +41,8 @@ class McpService : Service() {
             ACTION_RESTART -> { restartServer(); return START_STICKY }
         }
         if (!running.get()) startServer()
-        if (!FloatingService.isRunning) {
-            try { startService(Intent(this, FloatingService::class.java)) } catch (e: Exception) {
-                Log.w(TAG, "float start failed: ${e.message}")
-            }
+        if (!FloatingService.isRunning && Settings.canDrawOverlays(this)) {
+            FloatingService.start(this)
         }
         return START_STICKY
     }
@@ -191,7 +190,7 @@ class McpService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         try {
             startService(Intent(this, McpService::class.java))
-            startService(Intent(this, FloatingService::class.java))
+            if (Settings.canDrawOverlays(this)) FloatingService.start(this)
         } catch (e: Exception) { Log.w(TAG, "revive failed: ${e.message}") }
         super.onTaskRemoved(rootIntent)
     }

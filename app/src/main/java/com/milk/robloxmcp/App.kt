@@ -4,12 +4,16 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.util.Log
+import java.io.PrintWriter
+import java.io.StringWriter
 
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
         createChannel()
+        installCrashGuard()
     }
 
     private fun createChannel() {
@@ -24,6 +28,25 @@ class App : Application() {
                 setSound(null, null)
             }
             nm.createNotificationChannel(ch)
+        }
+    }
+
+    private fun installCrashGuard() {
+        val prev = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val sw = StringWriter()
+                e.printStackTrace(PrintWriter(sw))
+                val log = java.io.File(filesDir, "crash_last.txt")
+                log.writeText("thread=${t.name}\n\n" + sw.toString())
+                Log.e("RobloxMCP", "uncaught", e)
+            } catch (_: Throwable) {}
+            // 悬浮窗相关异常不拖垮主进程
+            if (e is android.view.WindowManager.BadTokenException) {
+                FloatingService.overlayMissing = true
+                return@setDefaultUncaughtExceptionHandler
+            }
+            prev?.uncaughtException(t, e)
         }
     }
 

@@ -37,12 +37,18 @@ fun HomeScreen(activity: MainActivity) {
 
     LaunchedEffect(Unit) {
         McpService.start(ctx)
-        if (overlayOk) FloatingService.start(ctx)
+        if (canOverlay(ctx)) FloatingService.start(ctx)
+        var autoStarted = false
         while (true) {
             val i = withContext(Dispatchers.IO) { BridgeClient.fetchInfo() }
             info = i
             status = McpService.statusText
-            overlayOk = canOverlay(ctx)
+            val nowOk = canOverlay(ctx)
+            if (nowOk && !autoStarted && !FloatingService.isRunning) {
+                FloatingService.start(ctx)
+                autoStarted = true
+            }
+            overlayOk = nowOk
             delay(1500)
         }
     }
@@ -117,6 +123,33 @@ fun HomeScreen(activity: MainActivity) {
             }
         }
 
+        if (!overlayOk) {
+            Card(
+                colors = CardDefaults.cardColors(Color(0xFF2A1A0E)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB5761F))
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("需要悬浮窗权限", fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold, color = Color(0xFFFFC46B))
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "授予后，悬浮窗可在退到后台、划掉 App 时继续显示，MCP 服务不会断。",
+                        fontSize = 11.sp, color = Color(0xFFE0C9A6)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = { openOverlaySettings(ctx) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(Color(0xFFE0912F))
+                    ) {
+                        Text("点击授权", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                            color = Color(0xFF20140A))
+                    }
+                }
+            }
+        }
+
         Card(colors = CardDefaults.cardColors(Color(0xFF121A23)), shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(14.dp)) {
                 Text("保活与权限", fontSize = 11.sp, color = Color(0xFF8FA3B8))
@@ -125,7 +158,12 @@ fun HomeScreen(activity: MainActivity) {
                     OutlinedButton(onClick = {
                         if (!canOverlay(ctx)) requestOverlay(ctx) else FloatingService.start(ctx)
                     }, modifier = Modifier.weight(1f)) {
-                        Text(if (overlayOk) "悬浮窗已开" else "开悬浮窗", fontSize = 12.sp)
+                        val label = when {
+                            !overlayOk -> "授权悬浮窗"
+                            FloatingService.isRunning -> "悬浮窗已开"
+                            else -> "开悬浮窗"
+                        }
+                        Text(label, fontSize = 12.sp)
                     }
                     OutlinedButton(onClick = { requestBattery(ctx) }, modifier = Modifier.weight(1f)) {
                         Text("电池白名单", fontSize = 12.sp)
@@ -165,13 +203,39 @@ private fun copy(ctx: Context, text: String) {
 private fun canOverlay(ctx: Context): Boolean =
     if (Build.VERSION.SDK_INT >= 23) Settings.canDrawOverlays(ctx) else true
 
-private fun requestOverlay(ctx: Context) {
-    if (Build.VERSION.SDK_INT >= 23) {
-        ctx.startActivity(
-            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+private fun requestOverlay(ctx: Context) = openOverlaySettings(ctx)
+
+/** 打开系统「显示在其他应用上层」授权页；多 ROM 兜底 */
+fun openOverlaySettings(ctx: Context) {
+    if (Build.VERSION.SDK_INT < 23) return
+    val pkgUri = Uri.parse("package:" + ctx.packageName)
+    val candidates = mutableListOf<Intent>()
+
+    if (Build.VERSION.SDK_INT >= 30) {
+        candidates += Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).setData(pkgUri)
     }
+    candidates += Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).setData(pkgUri)
+    candidates += Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+    candidates += Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(pkgUri)
+    // ColorOS / realme 的悬浮窗页
+    candidates += Intent().setClassName(
+        "com.coloros.safecenter",
+        "com.coloros.safecenter.permission.floatwindow.FloatWindowListActivity"
+    )
+    candidates += Intent().setClassName(
+        "com.oplus.safecenter",
+        "com.oplus.safecenter.permission.floatwindow.FloatWindowListActivity"
+    )
+
+    for (i in candidates) {
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            ctx.startActivity(i)
+            return
+        } catch (_: Exception) {}
+    }
+    Toast.makeText(ctx, "请到 设置 → 应用 → 特殊权限 → 显示在其他应用上层 手动开启",
+        Toast.LENGTH_LONG).show()
 }
 
 private fun requestBattery(ctx: Context) {
