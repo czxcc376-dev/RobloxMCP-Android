@@ -64,7 +64,7 @@ class McpService : Service() {
         if (!running.compareAndSet(false, true)) return
         scope.launch {
             try {
-                val dir = ServerCore.ensureInstalled(this@McpService) { updateNotification(it); log(it) }
+                val dir = ServerCore.ensureInstalled(this@McpService) { msg -> updateNotification(msg); log(msg) }
                 ServerCore.prepareSonames(this@McpService) { log(it) }
                 val node = ServerCore.nodeBin(this@McpService)
                 log("node=" + node.absolutePath + " exists=" + node.exists())

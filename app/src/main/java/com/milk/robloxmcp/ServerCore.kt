@@ -15,7 +15,7 @@ object ServerCore {
 
     fun ensureInstalled(ctx: Context, onLog: (String) -> Unit = {}): File {
         val dir = serverDir(ctx)
-        val marker = File(dir, ".installed_v2")
+        val marker = File(dir, ".installed_v3")
         if (marker.exists() && File(dir, "dist/interface/launcher.js").exists()) return dir
         if (!extracting.compareAndSet(false, true)) {
             while (extracting.get()) Thread.sleep(120)
@@ -25,11 +25,18 @@ object ServerCore {
             onLog("正在解压服务端…")
             dir.deleteRecursively()
             dir.mkdirs()
+            val t0 = System.currentTimeMillis()
+            var files = 0
             ctx.assets.open("server.tar.gz").use { raw ->
-                GZIPInputStream(raw, 65536).use { gz -> extractTar(gz, dir) }
+                GZIPInputStream(raw, 1 shl 16).use { gz ->
+                    files = extractTar(gz, dir) { n -> if (n % 500 == 0) onLog("已解压 $n 个文件…") }
+                }
             }
+            val ms = System.currentTimeMillis() - t0
+            if (!File(dir, "dist/interface/launcher.js").exists())
+                throw IllegalStateException("解压不完整：launcher.js 缺失")
             marker.writeText("ok")
-            onLog("服务端解压完成")
+            onLog("服务端就绪：$files 文件 / ${ms}ms")
             return dir
         } finally {
             extracting.set(false)
@@ -59,53 +66,83 @@ object ServerCore {
         return libs
     }
 
-    private fun extractTar(input: java.io.InputStream, dest: File) {
-        val header = ByteArray(512)
-        var pending: File? = null
-        var pendingLeft = 0L
-        val buf = ByteArray(32768)
+    private fun extractTar(
+        input: java.io.InputStream,
+        dest: File,
+        progress: (Int) -> Unit = {}
+    ): Int {
+        var files = 0
+        val hdr = ByteArray(512)
+        val buf = ByteArray(64 * 1024)
+        val destCanon = dest.canonicalPath
 
-        fun readN(n: Int): Int {
+        fun readBlock(): Int {
             var off = 0
-            while (off < n) {
-                val r = input.read(header, off, n - off)
-                if (r < 0) break
+            while (off < 512) {
+                val r = input.read(hdr, off, 512 - off)
+                if (r < 0) return off
                 off += r
             }
-            return off
+            return 512
         }
 
         while (true) {
-            if (pendingLeft > 0 && pending != null) {
-                val want = minOf(pendingLeft, buf.size.toLong()).toInt()
-                val got = input.read(buf, 0, want)
-                if (got <= 0) break
-                FileOutputStream(pending, true).use { it.write(buf, 0, got) }
-                pendingLeft -= got
-                if (pendingLeft <= 0) pending = null
-                if (got < want) break
-                continue
-            }
-            if (readN(512) < 512) break
-            if (header[0].toInt() == 0) break
-            val name = String(header, 0, 100).substringBefore('\u0000')
-            val sizeStr = String(header, 124, 12).substringBefore('\u0000').trim()
-            val size = try {
-                if (sizeStr.isBlank()) 0L else sizeStr.toLong(8)
-            } catch (_: Exception) { 0L }
-            val type = header[156].toInt().toChar()
-            val rel = name.removePrefix("./").removePrefix("server/")
-            if (rel.isBlank()) continue
-            val out = File(dest, rel)
-            val cp = out.canonicalPath
-            if (!cp.startsWith(dest.canonicalPath)) continue
-            when (type) {
-                '5' -> out.mkdirs()
-                '0', '\u0000', '7' -> {
-                    out.parentFile?.mkdirs()
-                    out.writeBytes(ByteArray(0))
-                    if (size > 0) { pending = out; pendingLeft = size }
+            if (readBlock() != 512) return files
+            if (hdr[0].toInt() == 0) return files
+
+            val rawName = String(hdr, 0, 100, Charsets.UTF_8).substringBefore('\u0000')
+            val sizeField = String(hdr, 124, 12, Charsets.US_ASCII).substringBefore('\u0000').trim()
+            var size = 0L
+            try { if (sizeField.isNotEmpty()) size = sizeField.toLong(8) } catch (_: Exception) { size = 0L }
+            val type = hdr[156].toInt().toChar()
+
+            val rel = rawName.removePrefix("./").removePrefix("server/").trimEnd('/')
+            if (rel.isNotEmpty()) {
+                val out = File(dest, rel)
+                if (out.canonicalPath.startsWith(destCanon)) {
+                    when (type) {
+                        '5' -> out.mkdirs()
+                        else -> {
+                            out.parentFile?.mkdirs()
+                            java.io.FileOutputStream(out).use { fos ->
+                                var left = size
+                                while (left > 0) {
+                                    val want = if (left > buf.size) buf.size else left.toInt()
+                                    val got = input.read(buf, 0, want)
+                                    if (got <= 0) break
+                                    fos.write(buf, 0, got)
+                                    left -= got
+                                }
+                            }
+                            files++
+                            progress(files)
+                        }
+                    }
+                } else {
+                    var left = size
+                    while (left > 0) {
+                        val want = if (left > buf.size) buf.size else left.toInt()
+                        val got = input.read(buf, 0, want)
+                        if (got <= 0) break
+                        left -= got
+                    }
                 }
+            } else {
+                var left = size
+                while (left > 0) {
+                    val want = if (left > buf.size) buf.size else left.toInt()
+                    val got = input.read(buf, 0, want)
+                    if (got <= 0) break
+                    left -= got
+                }
+            }
+
+            val pad = ((512 - (size % 512)) % 512).toInt()
+            var skipped = 0
+            while (skipped < pad) {
+                val r = input.read(buf, 0, minOf(pad - skipped, buf.size))
+                if (r <= 0) return files
+                skipped += r
             }
         }
     }

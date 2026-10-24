@@ -253,6 +253,7 @@ private fun InfoCard(info: BridgeInfo, status: String) {
             Text("运行信息", fontSize = 11.sp, color = TxtLo)
             Spacer(Modifier.height(12.dp))
             MetricRow("状态", status)
+            MetricRow("解压进度", if (status.contains("解压")) status else "—")
             MetricRow("当前地图", info.game.ifBlank { "—" })
             MetricRow("PlaceId", info.placeId.ifBlank { "—" })
             MetricRow("在线客户端", info.clients.toString())
